@@ -1,0 +1,68 @@
+# -----------------------------------------------------------------------------
+# Blueprint labels
+#
+# Issues: the issue forms ask "Which blueprint?"; this job reads the answer
+#         and adds the matching `blueprint: <name>` label (created on first
+#         use), so every blueprint gets its own filterable issue list.
+# Pull requests: actions/labeler adds the same labels based on the folders a
+#         pull request touches (.github/labeler.yml).
+# -----------------------------------------------------------------------------
+name: Labels
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            // Issue forms render answers as "### <label>\n\n<value>".
+            const body = context.payload.issue.body || "";
+            const match = body.match(/### Which blueprint\?\s*\n\s*\n([^\n]+)/);
+            if (!match) {
+              core.info("No blueprint selected, nothing to label.");
+              return;
+            }
+            const choice = match[1].trim();
+            if (choice === "_No response_" || choice.startsWith("Other")) return;
+
+            // "Standby Mode (standby-mode)" -> "standby-mode"
+            const slug = (choice.match(/\(([a-z0-9-]+)\)$/) || [])[1];
+            if (!slug) {
+              core.warning(`Unexpected blueprint choice: ${choice}`);
+              return;
+            }
+            const name = `blueprint: ${slug}`;
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({ ...context.repo, name, color: "0e8a16" });
+            }
+
+            // Replace labels of a previously selected blueprint (issue edited).
+            const current = context.payload.issue.labels.map((label) => label.name);
+            for (const old of current.filter((l) => l.startsWith("blueprint: ") && l !== name)) {
+              await github.rest.issues.removeLabel({ ...context.repo, issue_number: context.issue.number, name: old });
+            }
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: context.issue.number, labels: [name] });
+
+  pull-request:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v7
+        with:
+          sync-labels: true

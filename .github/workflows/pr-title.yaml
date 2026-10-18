@@ -1,0 +1,36 @@
+# -----------------------------------------------------------------------------
+# Pull request title check
+#
+# Pull requests are squash-merged, so the PR title becomes the commit message
+# that release-please reads. It must follow Conventional Commits, ideally with
+# the blueprint as scope, e.g. "fix(standby-mode): restore media after stop".
+# -----------------------------------------------------------------------------
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            refactor
+            test
+            ci
+            chore
+          scopes: |
+            repo
+          requireScope: false

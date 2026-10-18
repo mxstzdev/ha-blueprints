@@ -1,0 +1,14 @@
+# Example configuration that creates one script or automation from every
+# blueprint. CI validates it with Home Assistant's `check_config`
+# (scripts/check-config.sh) against the stable and beta container images.
+# scripts/create-blueprint.sh adds an instance here for every new blueprint.
+homeassistant:
+  name: Blueprint CI
+
+input_boolean:
+  example:
+    name: Example (used by new blueprints from scripts/create-blueprint.sh)
+
+script:
+
+automation:

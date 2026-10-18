@@ -1,0 +1,6 @@
+# Only the issue forms are offered; questions go to the Home Assistant forum.
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant community forum
+    url: https://community.home-assistant.io/c/blueprints-exchange/53
+    about: General questions about using blueprints in Home Assistant.

@@ -1,0 +1,62 @@
+# Bug report form. The "Which blueprint?" answer is turned into a
+# "blueprint: <name>" label by .github/workflows/labels.yaml; keep the option
+# texts in the form "Name (folder-name)".
+name: Bug report
+description: Something does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Setting the blueprint's **Log level** to **Debug**
+        and pasting the logbook entries below helps a lot.
+  - type: dropdown
+    id: blueprint
+    attributes:
+      label: Which blueprint?
+      description: A label with the blueprint name is added automatically.
+      options:
+        - Other / not specific to one blueprint
+    validations:
+      required: true
+  - type: input
+    id: blueprint_version
+    attributes:
+      label: Blueprint version
+      description: Shown in the "Version:" line at the top of the blueprint file.
+      placeholder: "1.0.0"
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About.
+      placeholder: "2026.10.2"
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Everyone leaves home
+        2. Wait 5 minutes
+        3. ...
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Automation configuration
+      description: Automation → ⋮ → Edit in YAML. Remove personal data.
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logbook entries or trace
+      description: With Log level set to Debug, from the automation's activity, or a downloaded trace.
+      render: text

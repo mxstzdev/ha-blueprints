@@ -1,0 +1,98 @@
+# -----------------------------------------------------------------------------
+# CI pipeline
+#
+# lint          yamllint (strict) for all YAML, ruff for the Python tests
+# test          pytest against a real Home Assistant core, latest stable and
+#               beta (beta may fail without blocking: early warning only)
+# check-config  Home Assistant's check_config on tests/config, using the
+#               official stable and beta container images
+#
+# Runs on pushes to main, pull requests, manually and weekly, so new Home
+# Assistant releases are tested even when this repository does not change.
+# All blueprints are tested together: they share the harness in tests/.
+# -----------------------------------------------------------------------------
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly run so new Home Assistant releases and betas are tested even
+    # when nothing changed in this repository.
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (yamllint, ruff, shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install yamllint ruff shellcheck-py
+      - run: yamllint --strict .
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: shellcheck scripts/*.sh
+
+  test:
+    name: Tests (HA ${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    # A beta failure is an early warning, not a reason to block a merge.
+    continue-on-error: ${{ matrix.channel == 'beta' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v7
+      # Newer Home Assistant releases raise their minimum Python version. Reading
+      # it from PyPI keeps pip from silently installing an older release.
+      - name: Resolve Home Assistant ${{ matrix.channel }} release
+        id: ha
+        run: python3 scripts/resolve_ha_version.py "${{ matrix.channel }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.ha.outputs.python_version }}
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+      - name: Install Home Assistant ${{ steps.ha.outputs.ha_version }}
+        if: matrix.channel == 'beta'
+        run: pip install --pre "homeassistant==${{ steps.ha.outputs.ha_version }}"
+      - name: Verify Home Assistant version
+        run: |
+          installed="$(python -c 'from homeassistant.const import __version__; print(__version__)')"
+          expected="${{ steps.ha.outputs.ha_version }}"
+          echo "Testing against Home Assistant ${installed} (latest ${{ matrix.channel }}: ${expected})"
+          # The test harness can lag a patch release behind; a different
+          # year.month means the wrong release was installed.
+          if [[ "${installed%.*}" != "${expected%.*}" ]]; then
+            echo "::error::Expected Home Assistant ${expected}, got ${installed}"
+            exit 1
+          fi
+      - run: pytest -v
+
+  check-config:
+    name: check_config (HA ${{ matrix.tag }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.tag == 'beta' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [stable, beta]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate example configuration
+        run: ./scripts/check-config.sh
+        env:
+          HA_TAG: ${{ matrix.tag }}

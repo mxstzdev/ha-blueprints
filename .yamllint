@@ -1,0 +1,24 @@
+---
+# yamllint configuration, tuned for Home Assistant YAML.
+# HA-specific tags (!input, !secret, !include, ...) are parsed fine by yamllint.
+# Run with `yamllint --strict .` (CI does the same).
+extends: default
+
+rules:
+  document-start: disable
+  line-length:
+    max: 120
+    level: warning
+  truthy:
+    # HA keys like "on:"/"off:" don't occur here, but values must be real booleans.
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+
+ignore: |
+  .venv/
+  node_modules/

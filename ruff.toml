@@ -1,0 +1,6 @@
+# ruff lint and format settings for the Python test suite.
+line-length = 120
+target-version = "py314"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

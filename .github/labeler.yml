@@ -1,0 +1,4 @@
+# Pull request labels by changed folder (used by .github/workflows/labels.yaml).
+"ci":
+  - changed-files:
+      - any-glob-to-any-file: [.github/**, scripts/**, tests/**]

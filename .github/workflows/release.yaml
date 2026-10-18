@@ -1,0 +1,62 @@
+# -----------------------------------------------------------------------------
+# Release pipeline (release-please, manifest mode)
+#
+# Every blueprint folder under blueprints/ is versioned on its own. On each
+# push to main, release-please reads the Conventional Commits that touched a
+# folder and keeps one release pull request up to date that
+#   - bumps the version in .release-please-manifest.json,
+#   - updates the "Version:" line in the blueprint's docblock, and
+#   - writes blueprints/<name>/CHANGELOG.md.
+# Merging that pull request creates a tag like `standby-mode-v1.2.0` and a
+# GitHub release; the blueprint YAML files are attached to that release.
+#
+# Configuration: release-please-config.json, .release-please-manifest.json
+# -----------------------------------------------------------------------------
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      paths_released: ${{ steps.release.outputs.paths_released }}
+    steps:
+      # release-please needs at least one package; skip until the first blueprint exists.
+      - uses: actions/checkout@v7
+      - id: packages
+        run: echo "count=$(jq '.packages | length' release-please-config.json)" >> "$GITHUB_OUTPUT"
+      - uses: googleapis/release-please-action@v5
+        if: steps.packages.outputs.count != '0'
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  attach-blueprints:
+    name: Attach blueprint files
+    needs: release-please
+    if: needs.release-please.outputs.paths_released != '[]' && needs.release-please.outputs.paths_released != ''
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        path: ${{ fromJSON(needs.release-please.outputs.paths_released) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Upload blueprint YAML to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PATH: ${{ matrix.path }}
+        run: |
+          component="$(jq -r --arg p "$RELEASE_PATH" '.packages[$p].component' release-please-config.json)"
+          version="$(jq -r --arg p "$RELEASE_PATH" '.[$p]' .release-please-manifest.json)"
+          tag="${component}-v${version}"
+          echo "Attaching ${RELEASE_PATH}/*.yaml to ${tag}"
+          gh release upload "$tag" "$RELEASE_PATH"/*.yaml --clobber
