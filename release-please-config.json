@@ -16,5 +16,10 @@
     { "type": "ci", "section": "CI", "hidden": true },
     { "type": "chore", "section": "Miscellaneous", "hidden": true }
   ],
-  "packages": {}
+  "packages": {
+    "blueprints/courier": {
+      "component": "courier",
+      "extra-files": ["courier.yaml", "courier_action_dispatcher.yaml"]
+    }
+  }
 }

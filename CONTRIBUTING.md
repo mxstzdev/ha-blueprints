@@ -28,7 +28,7 @@ blueprints/<name>/      blueprint YAML, README.md, CHANGELOG.md (one folder per 
 tests/                  pytest suite for all blueprints (shared harness in conftest.py)
 tests/config/           example configuration validated with check_config
 scripts/                validate.sh, check-config.sh, prepare-test-config.sh, resolve_ha_version.py,
-                        new-blueprint.sh (maintainers)
+                        create-blueprint.sh (maintainers)
 .github/                CI, release, labels, issue forms, PR template, Dependabot
 ```
 
@@ -95,7 +95,7 @@ scope:
 | --- | --- |
 | `fix(standby-mode): resume media after stop` | Patch release of Standby Mode |
 | `feat(trash-reminder): add days-ahead option` | Minor release of Trash Reminder |
-| `feat(notify-router)!: rename channel values` | Major release (breaking change) |
+| `feat(courier)!: rename channel values` | Major release (breaking change) |
 | `docs: ...`, `test: ...`, `ci: ...`, `chore: ...` | No release unless a blueprint folder changed |
 
 Each blueprint is versioned on its own, based on the files changed in its
@@ -106,11 +106,11 @@ checklist.
 
 New blueprints are added by the maintainer only (see
 [What contributions are welcome](#what-contributions-are-welcome)).
-[`scripts/new-blueprint.sh`](scripts/new-blueprint.sh) creates the boilerplate. It is
+[`scripts/create-blueprint.sh`](scripts/create-blueprint.sh) creates the boilerplate. It is
 a plain POSIX shell script, so it runs as it is on Linux, macOS and WSL:
 
 ```bash
-./scripts/new-blueprint.sh window-open-alert \
+./scripts/create-blueprint.sh window-open-alert \
   --name "Window Open Alert" \
   --description "Reminds you when a window stays open while the heating is on." \
   --log-level              # optional: off/info/debug log level for larger blueprints
@@ -125,6 +125,66 @@ both issue forms, the PR title scopes and the table in the [README](README.md).
 The result passes `./scripts/validate.sh` as it is; fill in every `TODO`
 before opening the pull request. Nothing is written if the folder exists or
 an input is invalid.
+
+## Shared interfaces
+
+### Notification script interface
+
+Notifications are sent by calling the selected script with `script.turn_on`
+and these variables, so any script that accepts them can replace
+[Courier](blueprints/courier/README.md):
+
+| Variable | Description |
+| --- | --- |
+| `recipients` | Who gets it: a target (`{entity_id: [person...], label_id: [...]}`), a list or a comma-separated string of person entities, label IDs or names, or `all`. Empty means everyone |
+| `title`, `message` | Text of the notification |
+| `channel` | `default`, `auto`, `app`, `telegram` or `both` |
+| `tag` | Identifies the notification so it can be replaced or cleared |
+| `actions` | Buttons as `[{action: "TYPE&#124;target", title: "Label"}]` |
+| `priority` | `normal` or `high` |
+| `clear` | `true` removes the notification with `tag` |
+
+Calling blueprints offer a "Who should be notified" input (target selector,
+default `{}`) and pass it on unchanged as `recipients`.
+
+### Button events (`courier_action`)
+
+The Action Dispatcher fires one event for every button press, whether it came
+from the Companion App or Telegram:
+
+```yaml
+event_type: courier_action
+event_data:
+  type: BAT_OK       # part before "|" of the button action
+  target: abc123     # part after "|", may be empty
+  source: app        # app | telegram
+```
+
+For Telegram it also answers the callback query and removes the inline
+keyboard. Button actions must stay below 64 bytes (Telegram limit).
+
+## Blueprint internals
+
+### Courier: Notifications for People
+
+#### Channel selection
+
+`recipient_people` resolves the recipients to person entities (labels via
+`label_entities`, `all` via the *People* input or every `person.*`). For each
+person `deliveries` decides the channel: forced channel, else Telegram for
+`priority: high` or when the person is not `home`, else the App; each with a
+fallback to the other channel. People without any channel end up in
+`unreachable` and are reported with `system_log.write`.
+
+#### Phones and chats
+
+- Phones: every entry of the person's `device_trackers` whose device has a
+  `mobile_app` identifier. The notify action is
+  `notify.mobile_app_<slugified device name>`, which is how the Companion App
+  names it. *Companion App per person* overrides this.
+- Telegram: the notify entity per allowed chat (config subentry) of the
+  Telegram Bot integration. `telegram_bot.send_message` accepts these as
+  `entity_id` since Home Assistant 2026.3, which sets the minimum version.
 
 ## Repository settings (maintainers)
 

@@ -9,6 +9,7 @@ body:
       label: Which blueprint?
       description: A label with the blueprint name is added automatically.
       options:
+        - Courier (courier)
         - Other / not specific to one blueprint
     validations:
       required: true

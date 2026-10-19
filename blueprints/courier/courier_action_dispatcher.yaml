@@ -1,0 +1,103 @@
+# =============================================================================
+# Courier: Action Dispatcher (automation blueprint)
+# https://github.com/mxstzdev/ha-blueprints/tree/main/blueprints/courier
+# Version: 1.0.0 # x-release-please-version
+# -----------------------------------------------------------------------------
+# Listens for button presses from
+#   - Companion App actionable notifications (`mobile_app_notification_action`)
+#   - Telegram inline keyboards (`telegram_callback`)
+# and re-fires them as one channel-neutral event:
+#
+#   event_type: courier_action
+#   event_data:
+#     type:   "BAT_OK"        # part before the "|"
+#     target: "<device id>"   # part after the "|" (may be empty)
+#     source: "app" | "telegram"
+#
+# For Telegram it also answers the callback query (stops the loading spinner)
+# and removes the inline keyboard so a button can only be pressed once.
+#
+# Create exactly one automation from this blueprint.
+# =============================================================================
+blueprint:
+  name: "Courier: Action Dispatcher"
+  description: >-
+    Normalises Companion App and Telegram button presses into a single
+    `courier_action` event with `type`, `target` and `source`.
+    Required by blueprints with buttons that use Courier. Create it once.
+  domain: automation
+  # yamllint disable-line rule:line-length
+  source_url: https://github.com/mxstzdev/ha-blueprints/blob/main/blueprints/courier/courier_action_dispatcher.yaml
+  homeassistant:
+    min_version: "2026.3.0"
+  input:
+    allowed_types:
+      name: Allowed action types
+      description: >-
+        Only actions whose TYPE is in this list are dispatched. Leave empty to
+        dispatch every action (other integrations may use actions, too).
+      default: []
+      selector:
+        text:
+          multiple: true
+    telegram_confirmation:
+      name: Telegram confirmation text
+      description: Short text shown in Telegram after a button was pressed.
+      default: "✔ Done"
+      selector:
+        text:
+
+mode: queued
+max: 25
+
+triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+    id: app
+  - trigger: event
+    event_type: telegram_callback
+    id: telegram
+
+variables:
+  allowed_types: !input allowed_types
+  telegram_confirmation: !input telegram_confirmation
+  # App: "TYPE|target", Telegram: "/TYPE|target"
+  raw_action: >-
+    {% if trigger.id == 'app' %}
+      {{ trigger.event.data.action | default('') }}
+    {% else %}
+      {{ trigger.event.data.data | default('') | regex_replace('^/', '') }}
+    {% endif %}
+  action_type: "{{ raw_action.split('|')[0] | trim }}"
+  action_target: "{{ raw_action.split('|', 1)[1] | trim if '|' in raw_action else '' }}"
+
+conditions:
+  - condition: template
+    value_template: "{{ action_type != '' and (allowed_types | count == 0 or action_type in allowed_types) }}"
+
+actions:
+  - event: courier_action
+    event_data:
+      type: "{{ action_type }}"
+      target: "{{ action_target }}"
+      source: "{{ trigger.id }}"
+
+  - if:
+      - condition: trigger
+        id: telegram
+    then:
+      - action: telegram_bot.answer_callback_query
+        continue_on_error: true
+        data:
+          callback_query_id: "{{ trigger.event.data.id }}"
+          message: "{{ telegram_confirmation }}"
+      - if:
+          - condition: template
+            value_template: "{{ trigger.event.data.message is mapping and trigger.event.data.chat_id is not none }}"
+        then:
+          - action: telegram_bot.edit_replymarkup
+            continue_on_error: true
+            data:
+              message_id: "{{ trigger.event.data.message.message_id }}"
+              chat_id: "{{ trigger.event.data.chat_id }}"
+              inline_keyboard: []

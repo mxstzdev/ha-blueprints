@@ -10,10 +10,10 @@ Every `blueprints/<name>/*.yaml` file is copied into the test config directory u
 the blueprint itself.
 
 Two ways to observe notifications:
-- `notify_calls` mocks `script.turn_on`, so feature blueprints can be tested without the
-  Notify Router; tests assert the variables handed to the notify script.
-- `mock_notify` + `setup_notify_router` run the real Notify Router script and record what
-  reaches the Companion App and Telegram.
+- `notify_calls` mocks `script.turn_on`, so feature blueprints can be tested without
+  Courier; tests assert the variables handed to the notify script.
+- `mock_notify` + `setup_courier` run the real Courier script and record what reaches
+  the Companion App and Telegram.
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ BLUEPRINTS = Path(__file__).resolve().parent.parent / "blueprints"
 NAMESPACE = "mxstzdev"
 DOMAIN_LINE = re.compile(r"^  domain: (automation|script)$", re.M)
 
-NOTIFY_SCRIPT = "script.notify_router"
+NOTIFY_SCRIPT = "script.courier"
 APP_SERVICE = "notify.mobile_app_test_phone"
-TELEGRAM_CHAT_ID = "123456"
+TELEGRAM_ENTITY = "notify.telegram_bot_marius"
 
 
 def blueprint_domain(path: Path) -> str:
@@ -63,7 +63,7 @@ async def blueprint_hass(hass: HomeAssistant, tmp_path: Path) -> AsyncGenerator[
 
 @pytest.fixture
 def notify_calls(blueprint_hass: HomeAssistant) -> list[ServiceCall]:
-    """Record calls to `script.turn_on` (the Notify Router)."""
+    """Record calls to `script.turn_on` (the Courier script)."""
     return async_mock_service(blueprint_hass, "script", "turn_on")
 
 
@@ -76,7 +76,7 @@ def notifications(calls: list[ServiceCall]) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def mock_notify(blueprint_hass: HomeAssistant) -> dict[str, list[ServiceCall]]:
-    """Record Companion App and Telegram calls made by the real Notify Router."""
+    """Record Companion App and Telegram calls made by the real Courier script."""
     domain, service = APP_SERVICE.split(".")
     return {
         "app": async_mock_service(blueprint_hass, domain, service),
@@ -86,25 +86,10 @@ def mock_notify(blueprint_hass: HomeAssistant) -> dict[str, list[ServiceCall]]:
     }
 
 
-async def setup_notify_router(hass: HomeAssistant, **inputs: Any) -> None:
-    """Create `script.notify_router` from the Notify Router blueprint."""
-    blueprint_inputs = {
-        "app_services": [APP_SERVICE],
-        "telegram_chat_ids": [TELEGRAM_CHAT_ID],
-        "default_channel": "both",
-        **inputs,
-    }
-    assert await async_setup_component(
-        hass,
-        "script",
-        {
-            "script": {
-                "notify_router": {
-                    "use_blueprint": {"path": f"{NAMESPACE}/notify_router.yaml", "input": blueprint_inputs}
-                }
-            }
-        },
-    )
+async def setup_courier(hass: HomeAssistant, **inputs: Any) -> None:
+    """Create `script.courier` from the Courier blueprint."""
+    blueprint = {"path": f"{NAMESPACE}/courier.yaml", "input": inputs}
+    assert await async_setup_component(hass, "script", {"script": {"courier": {"use_blueprint": blueprint}}})
 
 
 async def setup_automation(hass: HomeAssistant, blueprint: str, inputs: dict[str, Any]) -> None:

@@ -10,5 +10,19 @@ input_boolean:
     name: Example (used by new blueprints from scripts/create-blueprint.sh)
 
 script:
+  courier:
+    use_blueprint:
+      path: mxstzdev/courier.yaml
+      input:
+        telegram_chats:
+          - "person.marius: notify.telegram_bot_marius"
+        app_overrides:
+          - "person.marius: notify.mobile_app_phone"
 
 automation:
+  - id: courier_action_dispatcher
+    alias: "Courier: Action Dispatcher"
+    use_blueprint:
+      path: mxstzdev/courier_action_dispatcher.yaml
+      input:
+        allowed_types: [BAT_OK, OFF_ACK, OFF_RELOAD]

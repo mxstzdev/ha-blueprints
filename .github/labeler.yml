@@ -1,4 +1,7 @@
 # Pull request labels by changed folder (used by .github/workflows/labels.yaml).
+"blueprint: courier":
+  - changed-files:
+      - any-glob-to-any-file: blueprints/courier/**
 "ci":
   - changed-files:
       - any-glob-to-any-file: [.github/**, scripts/**, tests/**]

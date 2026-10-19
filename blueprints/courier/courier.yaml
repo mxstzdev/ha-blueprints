@@ -1,0 +1,365 @@
+# =============================================================================
+# Courier (script blueprint)
+# https://github.com/mxstzdev/ha-blueprints/tree/main/blueprints/courier
+# Version: 1.0.0 # x-release-please-version
+# -----------------------------------------------------------------------------
+# One script that every automation calls to send a notification to people
+# instead of devices. Callers name the recipients:
+#   - people:  person.marius
+#   - groups:  any label put on person entities, e.g. parents or kids
+#   - all:     everyone (also used when no recipient is given)
+#
+# For each recipient Courier picks the channel:
+#   channel auto (default)
+#     - priority high   -> Telegram, App if the person has no Telegram chat
+#     - person is home  -> Companion App, Telegram if the person has no App
+#     - person is away  -> Telegram, App if the person has no Telegram chat
+#   channel app / telegram / both -> forced, for every recipient
+#
+# Where messages go:
+#   - App: the phones in the person's "Track devices" (person entity). The
+#     notify action is derived from the mobile_app device name, e.g.
+#     device "Pixel 8" -> notify.mobile_app_pixel_8. Overrides are possible.
+#   - Telegram: the notify entity the Telegram integration creates for each
+#     allowed chat, e.g. notify.telegram_bot_marius. No chat IDs are stored
+#     in the blueprint; they stay in the Telegram integration.
+#
+# Buttons: one channel-neutral list is turned into Companion App actions and a
+# Telegram inline keyboard. The "Courier: Action Dispatcher" blueprint turns
+# presses on either channel into one `courier_action` event.
+#
+# Action format:  {action: "TYPE|target", title: "Button label"}
+#   - TYPE is a short upper-case keyword, e.g. BAT_OK or OFF_ACK.
+#   - target is optional (device id, entity id, ...).
+#   - Keep "TYPE|target" below 64 bytes (Telegram callback_data limit) and
+#     avoid commas in titles (Telegram keyboard rows are comma separated).
+#
+# Requirements:
+#   - Person integration (core), Companion App and/or Telegram bot integration.
+#   - Home Assistant 2026.3 or newer: telegram_bot.send_message accepts the
+#     per-chat notify entities since that release.
+# =============================================================================
+blueprint:
+  name: "Courier: Notifications for People"
+  description: >-
+    Sends a notification to people or groups of people (labels). People at home
+    get it in the Home Assistant Companion App, people away from home via
+    Telegram. Supports buttons on both channels, tags (replace or clear a
+    notification) and a high-priority mode that prefers Telegram.
+
+
+    Call it from automations with `script.turn_on` or directly as an action and
+    pass `message` plus optional `recipients`, `title`, `channel`, `tag`,
+    `actions`, `priority` or `clear`.
+  domain: script
+  source_url: https://github.com/mxstzdev/ha-blueprints/blob/main/blueprints/courier/courier.yaml
+  homeassistant:
+    min_version: "2026.3.0"
+  input:
+    people:
+      name: People
+      description: >-
+        Everyone who can get notifications. "Everyone" means these people. Leave
+        empty to use every person in Home Assistant.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: person
+    telegram_chats:
+      name: Telegram chat per person
+      description: >-
+        One line per person: the person, a colon and the Telegram notify entity
+        of their chat, e.g. `person.marius: notify.telegram_bot_marius`. The
+        Telegram integration creates one such entity per allowed chat. People
+        without a line only get App notifications.
+      default: []
+      selector:
+        text:
+          multiple: true
+    app_overrides:
+      name: Companion App per person (optional)
+      description: >-
+        Only needed if the automatic detection picks the wrong phone. One line
+        per person, e.g. `person.marius: notify.mobile_app_pixel_8`. Without a
+        line, every phone in the person's "Track devices" gets the notification.
+      default: []
+      selector:
+        text:
+          multiple: true
+    default_channel:
+      name: Default channel
+      description: >-
+        "Automatic" uses the App at home and Telegram away from home. The others
+        send every notification on that channel.
+      default: auto
+      selector:
+        select:
+          options:
+            - label: Automatic
+              value: auto
+            - label: Companion App
+              value: app
+            - label: Telegram
+              value: telegram
+            - label: App and Telegram
+              value: both
+
+mode: parallel
+max: 25
+
+fields:
+  recipients:
+    name: Recipients
+    description: "People or labels (groups of people). Empty means everyone."
+    selector:
+      target:
+        entity:
+          - domain: person
+  title:
+    name: Title
+    description: "Optional title shown above the message."
+    selector:
+      text:
+  message:
+    name: Message
+    description: "The text of the notification."
+    required: true
+    selector:
+      text:
+        multiline: true
+  channel:
+    name: Channel
+    description: "\"Default\" uses the default channel of this script."
+    default: default
+    selector:
+      select:
+        options:
+          - label: Default
+            value: default
+          - label: Automatic
+            value: auto
+          - label: Companion App
+            value: app
+          - label: Telegram
+            value: telegram
+          - label: App and Telegram
+            value: both
+  tag:
+    name: Tag
+    description: Identifies the notification so it can be replaced or cleared later.
+    selector:
+      text:
+  actions:
+    name: Actions
+    description: 'List of buttons, e.g. [{"action": "BAT_OK|abc123", "title": "Battery replaced"}]'
+    selector:
+      object:
+  priority:
+    name: Priority
+    description: "\"high\" prefers Telegram and makes App notifications time-sensitive."
+    default: normal
+    selector:
+      select:
+        options: [normal, high]
+  clear:
+    name: Clear notification
+    description: Removes the App notification with the given tag instead of sending one.
+    default: false
+    selector:
+      boolean:
+
+variables:
+  # --- Blueprint inputs ------------------------------------------------------
+  people_input: !input people
+  telegram_chats: !input telegram_chats
+  app_overrides: !input app_overrides
+  default_channel: !input default_channel
+
+  # --- Normalised call parameters -------------------------------------------
+  notify_title: "{{ title | default('', true) }}"
+  notify_tag: "{{ tag | default('', true) }}"
+  notify_actions: "{{ actions | default([], true) | list }}"
+  notify_priority: "{{ priority | default('normal', true) }}"
+  notify_clear: "{{ clear | default(false) | bool }}"
+  resolved_channel: >-
+    {% set requested = channel | default('default', true) %}
+    {{ default_channel if requested == 'default' else requested }}
+
+  # --- People ----------------------------------------------------------------
+  everyone: >-
+    {{ people_input if people_input | count > 0
+       else states.person | map(attribute='entity_id') | list }}
+
+  # "person.a: notify.x" lines -> {"person.a": "notify.x"}; lines without a colon are ignored.
+  telegram_map: >-
+    {% set ns = namespace(map={}) %}
+    {% for line in telegram_chats if ':' in line %}
+      {% set person, target = line.split(':', 1) | map('trim') | list %}
+      {% set ns.map = dict(ns.map, **{person: target}) %}
+    {% endfor %}
+    {{ ns.map }}
+  app_override_map: >-
+    {% set ns = namespace(map={}) %}
+    {% for line in app_overrides if ':' in line %}
+      {% set person, target = line.split(':', 1) | map('trim') | list %}
+      {% set ns.map = dict(ns.map, **{person: target}) %}
+    {% endfor %}
+    {{ ns.map }}
+
+  # Recipients may come from a target selector ({entity_id, label_id}), a list
+  # or a comma-separated string of person entities, label ids/names or "all".
+  recipient_people: >-
+    {% set raw = recipients | default(none, true) %}
+    {% if raw is none %}
+      {% set items = ['all'] %}
+    {% elif raw is mapping %}
+      {% set ns = namespace(items=[]) %}
+      {% for key in ['entity_id', 'label_id'] if raw.get(key) %}
+        {% set value = raw.get(key) %}
+        {% set ns.items = ns.items + ([value] if value is string else value | list) %}
+      {% endfor %}
+      {% set items = ns.items or ['all'] %}
+    {% elif raw is string %}
+      {% set items = raw.split(',') | map('trim') | reject('eq', '') | list %}
+    {% else %}
+      {% set items = raw | list %}
+    {% endif %}
+    {% set ns = namespace(people=[]) %}
+    {% for item in items %}
+      {% if item == 'all' %}
+        {% set ns.people = ns.people + everyone %}
+      {% elif item.startswith('person.') %}
+        {% set ns.people = ns.people + [item] %}
+      {% else %}
+        {% set ns.people = ns.people + (label_entities(item) | select('match', 'person[.]') | list) %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.people | unique | list }}
+
+  # Phones per person: an override line, else every tracker of the person that
+  # belongs to a Companion App device (device identifier domain "mobile_app").
+  app_targets: >-
+    {% set ns = namespace(map={}) %}
+    {% for person in recipient_people %}
+      {% if person in app_override_map %}
+        {% set phones = [app_override_map[person]] %}
+      {% else %}
+        {% set found = namespace(items=[]) %}
+        {% for tracker in state_attr(person, 'device_trackers') or [] %}
+          {% set device = device_id(tracker) %}
+          {% set domains = device_attr(device, 'identifiers') | map('first') | list if device else [] %}
+          {% if 'mobile_app' in domains %}
+            {% set found.items = found.items + ['notify.mobile_app_' ~ (device_attr(device, 'name') | slugify)] %}
+          {% endif %}
+        {% endfor %}
+        {% set phones = found.items %}
+      {% endif %}
+      {% set ns.map = dict(ns.map, **{person: phones}) %}
+    {% endfor %}
+    {{ ns.map }}
+
+  # --- Channel per person ----------------------------------------------------
+  # {"app": [notify actions], "telegram": [notify entities], "unreachable": [people]}
+  deliveries: >-
+    {% set ns = namespace(app=[], telegram=[], unreachable=[]) %}
+    {% for person in recipient_people %}
+      {% set app = app_targets[person] %}
+      {% set telegram = [telegram_map[person]] if person in telegram_map else [] %}
+      {% if resolved_channel in ['app', 'telegram', 'both'] %}
+        {% set use = resolved_channel %}
+      {% elif notify_priority == 'high' or not is_state(person, 'home') %}
+        {% set use = 'telegram' if telegram else 'app' %}
+      {% else %}
+        {% set use = 'app' if app else 'telegram' %}
+      {% endif %}
+      {% set sends_app = use in ['app', 'both'] and app | count > 0 %}
+      {% set sends_telegram = use in ['telegram', 'both'] and telegram | count > 0 %}
+      {% if sends_app %}{% set ns.app = ns.app + app %}{% endif %}
+      {% if sends_telegram %}{% set ns.telegram = ns.telegram + telegram %}{% endif %}
+      {% if not sends_app and not sends_telegram %}{% set ns.unreachable = ns.unreachable + [person] %}{% endif %}
+    {% endfor %}
+    {{ dict(app=ns.app | unique | list, telegram=ns.telegram | unique | list, unreachable=ns.unreachable) }}
+
+  # --- Companion App payload -------------------------------------------------
+  # Works for Android and iOS; unknown keys are ignored by the other platform.
+  app_data: >-
+    {% set data = dict(tag=notify_tag) if notify_tag else dict() %}
+    {% if notify_actions | count > 0 %}
+      {% set data = dict(data, actions=notify_actions) %}
+    {% endif %}
+    {% if notify_priority == 'high' %}
+      {% set data = dict(data, priority='high', ttl=0,
+                         push={'interruption-level': 'time-sensitive'}) %}
+    {% endif %}
+    {{ data }}
+
+  # --- Telegram payload ------------------------------------------------------
+  # All buttons go into one keyboard row: ["Label A:/TYPE|x, Label B:/TYPE|y"]
+  telegram_data: >-
+    {% set buttons = namespace(items=[]) %}
+    {% for item in notify_actions %}
+      {% set buttons.items = buttons.items + [item.title ~ ':/' ~ item.action] %}
+    {% endfor %}
+    {% set data = dict(entity_id=deliveries.telegram, message=message) %}
+    {% if notify_title %}{% set data = dict(data, title=notify_title) %}{% endif %}
+    {% if buttons.items %}{% set data = dict(data, inline_keyboard=[buttons.items | join(', ')]) %}{% endif %}
+    {{ data }}
+
+sequence:
+  # Clearing only exists for the Companion App; Telegram buttons are removed by
+  # the dispatcher once they are pressed. Every phone of the recipients is
+  # cleared, wherever the person is.
+  - if:
+      - condition: template
+        value_template: "{{ notify_clear }}"
+    then:
+      - if:
+          - condition: template
+            value_template: "{{ notify_tag != '' }}"
+        then:
+          - repeat:
+              for_each: "{{ app_targets.values() | sum(start=[]) | unique | list }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ notify_tag }}"
+      - stop: Notification cleared
+
+  # A recipient without a usable channel is reported in the Home Assistant log
+  # (Settings → System → Logs) instead of being skipped silently.
+  - if:
+      - condition: template
+        value_template: "{{ deliveries.unreachable | count > 0 }}"
+    then:
+      - action: system_log.write
+        continue_on_error: true
+        data:
+          level: warning
+          logger: blueprints.mxstzdev.courier
+          message: >-
+            Courier: no Companion App or Telegram chat for
+            {{ deliveries.unreachable | join(', ') }}, message not delivered to them: {{ message }}
+
+  - repeat:
+      for_each: "{{ deliveries.app }}"
+      sequence:
+        # continue_on_error: one offline phone must not block the others.
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: "{{ notify_title }}"
+            message: "{{ message }}"
+            data: "{{ app_data }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ deliveries.telegram | count > 0 }}"
+    then:
+      - action: telegram_bot.send_message
+        continue_on_error: true
+        data: "{{ telegram_data }}"

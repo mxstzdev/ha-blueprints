@@ -9,15 +9,28 @@ Assistant UI, no YAML needed.
 
 ## Available blueprints
 
-<!-- blueprints:start: rows are added by scripts/new-blueprint.sh -->
+<!-- blueprints:start: rows are added by scripts/create-blueprint.sh -->
 | Blueprint | What it does | Install |
 | --- | --- | --- |
+| [Courier](blueprints/courier/README.md) | Sends notifications to people or groups like parents or kids: in the Home Assistant app at home, via Telegram on the go. Most other blueprints use it. | [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmxstzdev%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fcourier%2Fcourier.yaml) |
+| [Courier: Action Dispatcher](blueprints/courier/README.md) | Makes notification buttons work. Add it once, together with Courier. | [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fmxstzdev%2Fha-blueprints%2Fblob%2Fmain%2Fblueprints%2Fcourier%2Fcourier_action_dispatcher.yaml) |
 <!-- blueprints:end -->
 
 Click **Import** next to a blueprint and confirm in Home Assistant. Then go to
 **Settings → Automations & scenes → Blueprints**, click the blueprint and fill
 in the form. Each blueprint's page (click its name) explains the setup step by
 step and lists what else you need.
+
+## Where to start
+
+Most blueprints send their notifications through **Courier**, so
+set that up first:
+
+1. Import **Courier** and create a script from it named `courier`.
+2. Import the **Action Dispatcher** and create one automation from it. It
+   makes the buttons in notifications work.
+3. Blueprints that send notifications ask for this script: choose
+   `script.courier`.
 
 ## Updating a blueprint
 
@@ -48,4 +61,5 @@ Want to fix a bug or improve one of the blueprints yourself? Read
 
 ## License
 
-These blueprints are free and open source under the [MIT License](LICENSE).
+These blueprints are free and open source under the MIT License. See the
+[LICENSE](LICENSE) file for the full text.
