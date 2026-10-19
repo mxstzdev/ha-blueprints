@@ -2,7 +2,7 @@
 # Create the boilerplate for a new blueprint and register it in the repository.
 #
 # Usage:
-#   ./scripts/new-blueprint.sh <folder-name> --name "Display name" \
+#   ./scripts/create-blueprint.sh <folder-name> --name "Display name" \
 #       --description "One sentence for users." [--domain automation|script] [--log-level]
 #
 # Creates blueprints/<folder-name>/ with the blueprint YAML, README.md and
@@ -23,7 +23,7 @@ set -eu
 
 OWNER=mxstzdev
 REPO=ha-blueprints
-ROOT=${NEW_BLUEPRINT_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
+ROOT=${CREATE_BLUEPRINT_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 
 usage() {
   sed -n '4,6s/^# \{0,1\}//p' "$0" >&2

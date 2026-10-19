@@ -118,11 +118,11 @@ def test_script_is_added_to_the_script_section(repo: Path) -> None:
     [
         ("Window_Open", "Window Open Alert"),  # invalid folder name
         ("window-open-alert", "Window's Alert"),  # quote in the name
-        ("notify-router", "Notify Router"),  # folder already exists
+        ("courier", "Courier"),  # folder already exists
     ],
 )
 def test_invalid_input_changes_nothing(repo: Path, slug: str, name: str) -> None:
-    (repo / "blueprints" / "notify-router").mkdir()
+    (repo / "blueprints" / "courier").mkdir()
     before = snapshot(repo)
 
     assert run(repo, slug, name=name) == 1
